@@ -38,22 +38,33 @@ class Module(bumblebee.engine.Module):
                    "SCROLL_UP":bumblebee.input.WHEEL_UP,
                    "SCROLL_DOWN":bumblebee.input.WHEEL_DOWN,
                    }
-        
+
         self._song = ""
         self._format = self.parameter("format", "{artist} - {title}")
         prev_button = self.parameter("previous", "LEFT_CLICK")
         next_button = self.parameter("next", "RIGHT_CLICK")
         pause_button = self.parameter("pause", "MIDDLE_CLICK")
-
         player = self.parameter("player", "spotify")
-        cmd = "dbus-send --session --type=method_call --dest=org.mpris.MediaPlayer2.spotify \
-                /org/mpris/MediaPlayer2 org.mpris.MediaPlayer2.Player."
-        engine.input.register_callback(self, button=buttons[prev_button],
-            cmd=cmd + "Previous")
-        engine.input.register_callback(self, button=buttons[next_button],
-            cmd=cmd + "Next")
-        engine.input.register_callback(self, button=buttons[pause_button],
-            cmd=cmd + "PlayPause")
+        bus = dbus.SessionBus()
+        try:
+            self.dbus = bus.get_object("org.mpris.MediaPlayer2.{player}"
+                                       .format(player=player)
+                                       , "/org/mpris/MediaPlayer2")
+            controls = dbus.Interface(self.dbus, "org.mpris.MediaPlayer2.Player")
+            engine.input.register_callback(
+                self, button=buttons[prev_button],
+                cmd=controls.Previous
+            )
+            engine.input.register_callback(
+                self, button=buttons[next_button],
+                cmd=controls.Next
+            )
+            engine.input.register_callback(
+                self, button=buttons[pause_button],
+                cmd=controls.PlayPause
+            )
+        except dbus.exceptions.DBusException:
+            pass
 
     @scrollable
     def spotify(self, widget):
@@ -64,17 +75,15 @@ class Module(bumblebee.engine.Module):
 
     def update(self, widgets):
         try:
-            bus = dbus.SessionBus()
-            spotify = bus.get_object("org.mpris.MediaPlayer2.spotify", "/org/mpris/MediaPlayer2")
-            spotify_iface = dbus.Interface(spotify, 'org.freedesktop.DBus.Properties')
-            props = spotify_iface.Get('org.mpris.MediaPlayer2.Player', 'Metadata')
-            playback_status = str(spotify_iface.Get('org.mpris.MediaPlayer2.Player', 'PlaybackStatus'))
+            properties = dbus.Interface(self.dbus, 'org.freedesktop.DBus.Properties')
+            props = properties.Get('org.mpris.MediaPlayer2.Player', 'Metadata')
+            playback_status = str(properties.Get('org.mpris.MediaPlayer2.Player', 'PlaybackStatus'))
             self._song = self._format.format(album=str(props.get('xesam:album')),
                                              title=str(props.get('xesam:title')),
                                              artist=','.join(props.get('xesam:artist')),
                                              trackNumber=str(props.get('xesam:trackNumber')),
                                              playbackStatus=u"\u25B6" if playback_status=="Playing" else u"\u258D\u258D" if playback_status=="Paused" else "",)
-            
+
         except Exception:
             self._song = ""
 
@@ -83,6 +92,6 @@ class Module(bumblebee.engine.Module):
         if sys.version_info.major < 3:
             return unicode(self._song)
         return str(self._song)
-        
+
 
 # vim: tabstop=8 expandtab shiftwidth=4 softtabstop=4
