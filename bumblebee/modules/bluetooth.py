@@ -16,6 +16,7 @@ import bumblebee.engine
 import bumblebee.util
 import bumblebee.popup
 import logging
+import dbus
 
 
 class Module(bumblebee.engine.Module):
@@ -29,7 +30,6 @@ class Module(bumblebee.engine.Module):
 
         device = self.parameter("device", "hci0")
         self.manager = self.parameter("manager", "blueman-manager")
-        self._path = "/sys/class/bluetooth/{}".format(device)
         self._status = "Off"
 
         engine.input.register_callback(self, button=bumblebee.input.LEFT_MOUSE,
@@ -37,6 +37,10 @@ class Module(bumblebee.engine.Module):
         engine.input.register_callback(self,
                                        button=bumblebee.input.RIGHT_MOUSE,
                                        cmd=self.popup)
+        dbusSystem = dbus.SystemBus()
+        bluez = dbusSystem.get_object('org.bluez', "/org/bluez/{device}"
+                                                   .format(device=device))
+        self.dbus = dbus.Interface(bluez, 'org.freedesktop.DBus.Properties')
 
     def status(self, widget):
         """Get status."""
@@ -44,27 +48,10 @@ class Module(bumblebee.engine.Module):
 
     def update(self, widgets):
         """Update current state."""
-        if not os.path.exists(self._path):
-            self._status = "?"
-            return
-
-        # search for whichever rfkill directory available
         try:
-            dirnames = next(os.walk(self._path))[1]
-            for dirname in dirnames:
-                m = re.match(r"rfkill[0-9]+", dirname)
-                if m is not None:
-                    with open(os.path.join(self._path,
-                                           dirname,
-                                           'state'), 'r') as f:
-                        state = int(f.read())
-                        if state == 1:
-                            self._status = "On"
-                        else:
-                            self._status = "Off"
-                    return
-
-        except IOError:
+            status = bool(self.dbus.Get("org.bluez.Adapter1", 'Powered'))
+            self._status = "On" if status else "Off"
+        except Exception:
             self._status = "?"
 
     def manager(self, widget):
@@ -91,15 +78,11 @@ class Module(bumblebee.engine.Module):
     def _toggle(self):
         """Toggle bluetooth state."""
         if self._status == "On":
-            state = "false"
+            state = False
         else:
-            state = "true"
+            state = True
 
-        cmd = "dbus-send --system --print-reply --dest=org.blueman.Mechanism"\
-              " / org.blueman.Mechanism.SetRfkillState"\
-              " boolean:{}".format(state)
-
-        bumblebee.util.execute(cmd)
+        self.dbus.Set('org.bluez.Adapter1', 'Powered', state)
 
     def state(self, widget):
         """Get current state."""
