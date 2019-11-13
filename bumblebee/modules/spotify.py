@@ -45,6 +45,7 @@ class Module(bumblebee.engine.Module):
         next_button = self.parameter("next", "RIGHT_CLICK")
         pause_button = self.parameter("pause", "MIDDLE_CLICK")
 
+        player = self.parameter("player", "spotify")
         cmd = "dbus-send --session --type=method_call --dest=org.mpris.MediaPlayer2.spotify \
                 /org/mpris/MediaPlayer2 org.mpris.MediaPlayer2.Player."
         engine.input.register_callback(self, button=buttons[prev_button],
